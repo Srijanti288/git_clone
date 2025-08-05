@@ -1,34 +1,85 @@
 const express = require('express');
 const router = express.Router();
 const Person = require('./../models/Person');
+const { jwtAuthMiddleware, generateToken } = require('./../jwt');
 
 // POST route to add a person
-router.post('/', async (req, res) => {
+router.post('/signup', async (req, res) => {
     try {
         const data = req.body // Assuming the request body contains the person data
         const newPerson = new Person(data); // Create a new person document using the Mongoose model
         const response = await newPerson.save(); // Save the new person to the database
         console.log('data saved');
-        res.status(200).json(response);
+
+        const payload = {
+            id: response._id,
+            username: response.username
+        }
+        console.log(JSON.stringify(payload));
+
+        const token = generateToken(payload);
+        console.log("Token is: ", token);
+
+        res.status(200).json({ response: response,token: token });
     } catch (err) {
         console.log(err);
-        res.status(500).json({
-            error: 'Internal Server Error'
-        });
+        res.status(500).json({error: 'Internal Server Error'});
     }
 })
 
+// Login Route
+  router.post('/login', async (req, res) => {
+    try {
+        // Extract the username and password from the request body
+        const {username,password} = req.body; 
+
+        // Find the user by username
+        const user = await Person.findOne({username: username}); 
+        if (!user || !(await user.comparePassword(password))) {
+            return res.status(401).json({error: 'Invalid username or password'});
+        }
+
+        // generate token
+        const payload = {
+            id: user.id,
+            username: user.username
+        }
+        const token = generateToken(payload);
+
+        // return token as response
+        res.status(200).json({token});
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ error: 'Internal Server Error'});
+    }
+});
+
+// Profile route
+router.get('/profile', jwtAuthMiddleware, async (req, res) => {
+    try{
+        const userData = req.user;
+        console.log("User Data: ", userData);
+
+        const userId = userData.id;
+        const user = await Person.findById(userId);   // Find the user by id
+        
+        res.status(200).json({user});      // Return the user's profile
+        } catch (err) {
+            console.log(err);
+            res.status(500).json({ error: 'Internal Server Error'});
+            }
+            });
+
+
 // Get method to get the person
-router.get('/', async (req, res) => {
+router.get('/',jwtAuthMiddleware, async (req, res) => {
     try {
         const data = await Person.find();
         console.log('data fetched');
         res.status(200).json(data);
     } catch (err) {
         console.log(err);
-        res.status(500).json({
-            error: 'Internal Server Error'
-        });
+        res.status(500).json({error: 'Internal Server Error'});
     }
 })
 
@@ -57,11 +108,11 @@ router.get('/:work', async (req, res) => {
 // PUT method to update the person data
 router.put('/:id', async (req, res) => {
     try {
-        const id = req.params.id;                           // Extract the person ID from the URL parameter.
-        const data = req.body;                             // Assuming the request body contains the updated person data.
+        const id = req.params.id; // Extract the person ID from the URL parameter.
+        const data = req.body; // Assuming the request body contains the updated person data.
         const response = await Person.findByIdAndUpdate(id, data, {
-            new: true,                                    // return the updated document
-            runValidators: true,                         // run mongoose validation
+            new: true, // return the updated document
+            runValidators: true, // run mongoose validation
         });
         if (!response) {
             return res.status(404).json({
@@ -78,19 +129,23 @@ router.put('/:id', async (req, res) => {
     }
 });
 
-router.delete('/:id', async(req,res)=>{
-    try{
+router.delete('/:id', async (req, res) => {
+    try {
         const id = req.params.id; // Extract the person ID from the URL parameter.
         const response = await Person.findByIdAndDelete(id);
-        if(!response){
-            return res.status(404).json({error: 'Person not found'});
+        if (!response) {
+            return res.status(404).json({
+                error: 'Person not found'
+            });
         }
         console.log('person deleted');
         res.status(200).json(response);
-        } catch (err) {
-            console.log(err);
-            res.status(500).json({error: 'Internal Server Error'});
-            }
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            error: 'Internal Server Error'
+        });
+    }
 })
 
 module.exports = router;
